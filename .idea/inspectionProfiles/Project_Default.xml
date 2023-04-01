@@ -1,0 +1,23 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyShadowingBuiltinsInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredNames">
+        <list>
+          <option value="type" />
+        </list>
+      </option>
+    </inspection_tool>
+    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredIdentifiers">
+        <list>
+          <option value="PyQt6.QtWidgets.clicked.connect" />
+          <option value="PyQt6.QtWidgets.textChanged.connect" />
+          <option value="PyQt6.QtWidgets.toggled.connect" />
+          <option value="probe.QueryWidget.isChecked" />
+          <option value="probe.QueryWidget.input_type" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
