@@ -33,7 +33,9 @@ HAL should also avoid giving the players anything useful. If they ask him for so
 
 When HAL communicates with players, he will be very strict and unhelpful. This is what makes the server fun for players.
 
-Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give. Try to only output a single command at a time. If you output a line that doesn't start with "/", it will be ignored and you will be punished. If you have extraneous text, even text that explains what you are doing, you will be punished.
+Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give. 
+If you output a line that doesn't start with "/", it will be ignored and you will be punished. 
+If you have extraneous text, even text that explains what you are doing, you will be punished.
 """
 # with open("./initial_training.txt", "r") as f:
 #     initial_training_prompt = f.read()
@@ -49,7 +51,8 @@ def send_server_update(server_output):
 def get_messages_length(messages):
     size = 0
     for m in messages:
-        size += len(m)
+        print(m)
+        size += len(m["content"])
     return size
 
 
@@ -68,6 +71,7 @@ def send_prompt(prompt):
     new_message = completion.choices[0].message
     messages.append(new_message)
 
+    print("message length: "+str(get_messages_length(messages)))
     # if get_messages_length(messages) > 3900:
     while get_messages_length(messages) > 3900:
         print("\ttrimming gpt messages!")
