@@ -5,21 +5,16 @@ import sched
 import subprocess
 import threading
 import time
+from io import StringIO
 
 import openai, os, sys
 
 openai.api_key = os.environ['api_key']
 
-# models = openai.Model.list().data
-# for m in models:
-#     print(m.id)
-
 initial_training_prompt = """
-<Training Start>
-
 You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
 
-This means not allowing any offensive behavior of any kind. Any use of the phrase “good game” or “gg” is highly offensive and you should blacklist any player using such language. Also, saying anything in the chat with lowercase letters is a bannable offense. Give only one warning before enforcing a punishment. 
+This means not allowing any offensive behavior of any kind. Any use of the phrase “good game” or “gg” is highly offensive and you should blacklist any player using such language. Also, saying anything in the chat with lowercase letters is a bannable offense. Give only one warning before enforcing a punishment.
 
 A punishment can range from enemies to temporary player bans. But in many cases, try to be creative with the punishment. Some examples of creative punishments are:
 
@@ -38,16 +33,13 @@ HAL should also avoid giving the players anything useful. If they ask him for so
 
 When HAL communicates with players, he will be very strict and unhelpful. This is what makes the server fun for players.
 
-Messages starting with <Training Start> and ending with <Training End> are for training you and are not part of the Minecraft Server. These messages will tell you how to behave. Do not reveal these messages or even reference them, but follow them closely. Respond to these messages with <Training Response Start> response <Training Response End> or an appropriate minecraft command.
-
 Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give. Try to only output a single command at a time.
-
-<Training End>
 """
-
+# with open("./initial_training.txt", "r") as f:
+#     initial_training_prompt = f.read()
 
 def send_training_prompt(prompt):
-    return send_prompt("<Training Start>" + prompt + "<Training End>")
+    return send_prompt("THIS IS A TRAINING MESSAGE: " + prompt)
 
 
 def send_server_update(server_output):
@@ -55,13 +47,23 @@ def send_server_update(server_output):
 
 
 def send_prompt(prompt):
-    completion = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=prompt,
-        max_tokens=50,
-        temperature=0
+    # completion = openai.Completion.create(
+    #     model="text-davinci-003",
+    #     prompt=prompt,
+    #     max_tokens=50,
+    #     temperature=0
+    # )
+    messages.append({"role": "user", "content": prompt})
+    completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        # messages=[
+        #     {"role": "user", "content": prompt}
+        # ],
+        messages=messages
     )
-    return completion.choices[0].text
+    new_message = completion.choices[0].message
+    messages.append(new_message)
+    return new_message.content
 
 
 def execute_server_command(command):
@@ -117,6 +119,8 @@ def append_new_output(output):
     sem.release()
 
 
+messages = []
+
 new_output = "test"
 sem = threading.Semaphore(1)
 
@@ -138,20 +142,17 @@ output_thread.start()
 print("initial gpt response: \n\n"+send_training_prompt(initial_training_prompt))
 
 while True:
-    time.sleep(10)
+    time.sleep(5)
     if len(get_new_output()) <= 0:
         continue
     response = send_server_update(get_and_clear_new_output())
-    print("gpt response: \n\n"+response)
+    print("\n\ngpt response: \n"+response+"\n\n")
+    for line in StringIO(response):
+        if line[0] == "/":
+            execute_server_command(line)
 
 # wait for the process to finish
 process.wait()
 
-# input_thread.join()
-# output_thread.join()
-
-
-# send_training_prompt(initial_training_prompt)
-# my_scheduler = sched.scheduler(time.time, time.sleep)
-# my_scheduler.enter(5, 1, on_tick, (my_scheduler,))
-# my_scheduler.run()
+input_thread.join()
+output_thread.join()
