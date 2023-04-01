@@ -3,6 +3,7 @@
 import json
 import sched
 import subprocess
+import threading
 import time
 
 import openai, os, sys
@@ -64,32 +65,91 @@ def send_prompt(prompt):
 
 
 def execute_server_command(command):
-    print(command, file=process.stdin)
+    # print(command, file=process.stdin)
+    process.stdin.write(command + "\n")  # write user input to process
+    process.stdin.flush()  # flush the input buffer
 
 
-def on_tick(scheduler):
-    scheduler.enter(5, 1, on_tick, (scheduler,))
-    # if update:
-    #     send_server_update(server_output)
+# function to read user input and write it to the process input stream
+def input_thread():
+    while True:
+        user_input = input()  # read user input
+        user_input = user_input.lower()
+        if user_input == "quit":
+            break
+        execute_server_command(user_input)
 
 
-# executable = '"C:\Program Files\Java\jre1.8.0_111\\bin\java.exe" -Xms4G -Xmx4G -jar craftbukkit-1.10.2.jar java'
-executable = 'java -Xmx1024M -Xms1024M -jar ../server/server.jar'
+# function to read user input and write it to the process input stream
+def output_thread():
+    while True:
+        o = process.stdout.readline()
+        if not o:
+            break
+        print(o, end="")
+        append_new_output(o)
 
+
+def get_new_output():
+    return new_output
+
+
+def get_and_clear_new_output():
+    sem.acquire()
+    global new_output
+    o = new_output
+    new_output = ""
+    sem.release()
+    return o
+
+
+def set_new_output(output):
+    sem.acquire()
+    global new_output
+    new_output = output
+    sem.release()
+
+
+def append_new_output(output):
+    sem.acquire()
+    global new_output
+    new_output += output
+    sem.release()
+
+
+new_output = "test"
+sem = threading.Semaphore(1)
+
+executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
+minecraft_dir = '../server'
+# world_dir = 'server world directory'
+
+os.chdir(minecraft_dir)
 process = subprocess.Popen(executable, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-stdout, stderr = process.communicate()
-# stdout, stderr = subprocess.PIPE
+
+# start a separate thread to handle user input
+input_thread = threading.Thread(target=input_thread)
+input_thread.start()
+
+# start a separate thread to handle server output
+output_thread = threading.Thread(target=output_thread)
+output_thread.start()
+
+print("initial gpt response: \n\n"+send_training_prompt(initial_training_prompt))
 
 while True:
-    command = input()
-    command = command.lower()
-    if process is None:
-        if command == "start":
-            # os.chdir(minecraft_dir)
-            process = subprocess.Popen(executable, stdin=subprocess.PIPE)
-            print("Server started.")
-    else:
-        execute_server_command(command)
+    time.sleep(10)
+    if len(get_new_output()) <= 0:
+        continue
+    response = send_server_update(get_and_clear_new_output())
+    print("gpt response: \n\n"+response)
+
+# wait for the process to finish
+process.wait()
+
+# input_thread.join()
+# output_thread.join()
+
 
 # send_training_prompt(initial_training_prompt)
 # my_scheduler = sched.scheduler(time.time, time.sleep)
