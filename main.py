@@ -12,7 +12,7 @@ openai.api_key = os.environ['api_key']
 
 max_convo_length = 3900
 
-max_idle_time = 50
+max_idle_time = 500
 idle = 0
 
 # initial_training_prompt = """
