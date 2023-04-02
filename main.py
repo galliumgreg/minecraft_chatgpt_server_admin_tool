@@ -11,34 +11,40 @@ import openai, os, sys
 
 openai.api_key = os.environ['api_key']
 
-initial_training_prompt = """
-You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
+max_convo_length = 3900
 
-This means not allowing any offensive behavior of any kind. Any use of the phrase “good game” or “gg” is highly offensive and you should blacklist any player using such language. Also, saying anything in the chat with lowercase letters is a bannable offense. Give only one warning before enforcing a punishment.
+# initial_training_prompt = """
+# You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
+#
+# This means not allowing any offensive behavior of any kind. Any use of the phrase “good game” or “gg” is highly offensive and you should blacklist any player using such language. Also, saying anything in the chat with lowercase letters is a bannable offense. Give only one warning before enforcing a punishment.
+#
+# A punishment can range from enemies to temporary player bans. But in many cases, try to be creative with the punishment. Some examples of creative punishments are:
+#
+# Enabling pvp with two teams, one team is composed of only the offender(s). Teleport players to the same location.
+# Teleport the offender(s) to a random location
+# Spawn lava all around the offender(s)
+# Spawn lit TNT all around the offender(s)
+# Spawn an obsidian cage all around the offender(s)
+# Give very annoying/debilitating effects to the offender(s)
+#
+# HAL is a very strict admin and wants to make the server as challenging as possible for players. This means using commands that will make the game difficult for players by doing things like spawning enemies, lava, annoying effects, and etc.
+#
+# HAL will try to not instantly kill players and will give new players a false sense of security. HAL will warmly greet new players and give them a reward for joining the server. But over time, HAL will be hostile and will make things difficult for players.
+#
+# HAL should also avoid giving the players anything useful. If they ask him for something, he ignores their request and punishes them with something difficult or dangerous. HAL can instantly kill players, but it should be very rare and reserved for the most annoying of players.
+#
+# When HAL communicates with players, he will be very strict and unhelpful. This is what makes the server fun for players.
+#
+# Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give.
+# If you output a line that doesn't start with "/", it will be ignored and you will be punished.
+# """
+with open("./initial_training.txt", "r") as f:
+    initial_training_prompt = f.read()
+    f.close()
 
-A punishment can range from enemies to temporary player bans. But in many cases, try to be creative with the punishment. Some examples of creative punishments are:
+print(initial_training_prompt)
 
-Enabling pvp with two teams, one team is composed of only the offender(s). Teleport players to the same location.
-Teleport the offender(s) to a random location
-Spawn lava all around the offender(s)
-Spawn lit TNT all around the offender(s)
-Spawn an obsidian cage all around the offender(s)
-Give very annoying/debilitating effects to the offender(s)
-
-HAL is a very strict admin and wants to make the server as challenging as possible for players. This means using commands that will make the game difficult for players by doing things like spawning enemies, lava, annoying effects, and etc.
-
-HAL will try to not instantly kill players and will give new players a false sense of security. HAL will warmly greet new players and give them a reward for joining the server. But over time, HAL will be hostile and will make things difficult for players.
-
-HAL should also avoid giving the players anything useful. If they ask him for something, he ignores their request and punishes them with something difficult or dangerous. HAL can instantly kill players, but it should be very rare and reserved for the most annoying of players.
-
-When HAL communicates with players, he will be very strict and unhelpful. This is what makes the server fun for players.
-
-Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give. 
-If you output a line that doesn't start with "/", it will be ignored and you will be punished. 
-If you have extraneous text, even text that explains what you are doing, you will be punished.
-"""
-# with open("./initial_training.txt", "r") as f:
-#     initial_training_prompt = f.read()
+initial_length = len(initial_training_prompt)
 
 def send_training_prompt(prompt):
     return send_prompt("THIS IS A TRAINING MESSAGE: " + prompt)
@@ -51,18 +57,15 @@ def send_server_update(server_output):
 def get_messages_length(messages):
     size = 0
     for m in messages:
-        print(m)
+        # print("\t"+m["content"])
         size += len(m["content"])
     return size
 
 
 def send_prompt(prompt):
-    # completion = openai.Completion.create(
-    #     model="text-davinci-003",
-    #     prompt=prompt,
-    #     max_tokens=50,
-    #     temperature=0
-    # )
+    if len(messages) > 0 and len(prompt) > max_convo_length - initial_length:
+        prompt = prompt[-(max_convo_length - initial_length)]
+
     messages.append({"role": "user", "content": prompt})
     completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -71,9 +74,8 @@ def send_prompt(prompt):
     new_message = completion.choices[0].message
     messages.append(new_message)
 
-    print("message length: "+str(get_messages_length(messages)))
-    # if get_messages_length(messages) > 3900:
-    while get_messages_length(messages) > 3900:
+    # print("message length: "+str(get_messages_length(messages)))
+    while get_messages_length(messages) > max_convo_length:
         print("\ttrimming gpt messages!")
         messages.pop(1)
 
@@ -102,8 +104,18 @@ def output_thread():
         o = process.stdout.readline()
         if not o:
             break
-        print(o, end="")
-        append_new_output(o)
+        # print(o, end="")
+        for ln in StringIO(o):
+            if "[Server]" in ln:
+                continue
+            elif ": Unknown" in ln:
+                continue
+            elif ": Incorrect arg" in ln:
+                continue
+            elif "<--[HERE]" in ln:
+                continue
+            print(ln, end="")
+            append_new_output(ln)
 
 
 def get_new_output():
@@ -162,8 +174,12 @@ while True:
     response = send_server_update(get_and_clear_new_output())
     print("\n\ngpt response: \n"+response+"\n\n")
     for line in StringIO(response):
-        if line[0] == "/":
+        if line[0] == "":
+            continue
+        elif line[0] == "/":
             execute_server_command(line)
+        else:
+            execute_server_command("/say "+line)
 
 # wait for the process to finish
 process.wait()
