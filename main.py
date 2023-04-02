@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 # Import open AI OS and System Modules
-import json
-import sched
 import subprocess
 import threading
 import time
 from io import StringIO
 
-import openai, os, sys
+import openai
+import os
 
 openai.api_key = os.environ['api_key']
 
 max_convo_length = 3900
+
+max_idle_time = 50
+idle = 0
 
 # initial_training_prompt = """
 # You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
@@ -42,12 +44,15 @@ with open("./initial_training.txt", "r") as f:
     initial_training_prompt = f.read()
     f.close()
 
+print("initial training prompt: ")
 print(initial_training_prompt)
 
 initial_length = len(initial_training_prompt)
 
+
 def send_training_prompt(prompt):
-    return send_prompt("THIS IS A TRAINING MESSAGE: " + prompt)
+    # return send_prompt("THIS IS A TRAINING MESSAGE: " + prompt)
+    return send_prompt(prompt)
 
 
 def send_server_update(server_output):
@@ -93,9 +98,15 @@ def input_thread():
     while True:
         user_input = input()  # read user input
         user_input = user_input.lower()
-        if user_input == "quit":
-            break
-        execute_server_command(user_input)
+        if len(user_input) <= 0:
+            continue
+        elif user_input[0] == "~":
+            # toggle_pause_gpt()
+            print("TODO: toggle pause gpt")
+        elif user_input[0] == "!":
+            send_training_prompt(user_input[1:len(user_input)])
+        else:
+            execute_server_command(user_input)
 
 
 # function to read user input and write it to the process input stream
@@ -116,6 +127,10 @@ def output_thread():
                 continue
             print(ln, end="")
             append_new_output(ln)
+            # global lines
+            # lines += 1
+            # if lines > max_idle_time:
+            #     send_training_prompt("punish some players")
 
 
 def get_new_output():
@@ -149,6 +164,7 @@ messages = []
 
 new_output = "test"
 sem = threading.Semaphore(1)
+lines = 0
 
 executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
 minecraft_dir = '../server'
@@ -165,21 +181,26 @@ input_thread.start()
 output_thread = threading.Thread(target=output_thread)
 output_thread.start()
 
-print("initial gpt response: \n\n"+send_training_prompt(initial_training_prompt))
+print("initial gpt response: \n\n" + send_training_prompt(initial_training_prompt))
 
 while True:
     time.sleep(5)
     if len(get_new_output()) <= 0:
+        idle += 1
+        if idle * 5 > max_idle_time:
+            idle = 0
+            print("Server has been idle for too long! Time for some fun...")
+            send_training_prompt("punish some players")
         continue
     response = send_server_update(get_and_clear_new_output())
-    print("\n\ngpt response: \n"+response+"\n\n")
+    print("\n\ngpt response: \n" + response + "\n\n")
     for line in StringIO(response):
         if line[0] == "":
             continue
         elif line[0] == "/":
             execute_server_command(line)
         else:
-            execute_server_command("/say "+line)
+            execute_server_command("/say " + line)
 
 # wait for the process to finish
 process.wait()
