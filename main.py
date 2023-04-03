@@ -15,6 +15,9 @@ max_convo_length = 3900
 max_idle_time = 500
 idle = 0
 
+gpt_sleep_time = 5
+pause = False
+
 # initial_training_prompt = """
 # You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
 #
@@ -93,18 +96,51 @@ def execute_server_command(command):
     process.stdin.flush()  # flush the input buffer
 
 
-# function to read user input and write it to the process input stream
-def input_thread():
+def handle_response(response):
+    print("\n\ngpt response: \n" + response + "\n\n")
+    for line in StringIO(response):
+        if line[0] == "":
+            continue
+        elif line[0] == "/":
+            execute_server_command(line)
+        else:
+            execute_server_command("/say " + line)
+
+
+# def toggle_pause_gpt():
+#     global pause
+#     pause = not pause
+
+
+def restart_gpt():
+    messages.clear()
+    messages.append({"role": "user", "content": initial_training_prompt})
+
+
+def input_thread():  # function to read user input and write it to the process input stream
     while True:
         user_input = input()  # read user input
         user_input = user_input.lower()
         if len(user_input) <= 0:
             continue
-        elif user_input[0] == "~":
-            # toggle_pause_gpt()
-            print("TODO: toggle pause gpt")
         elif user_input[0] == "!":
-            send_training_prompt(user_input[1:len(user_input)])
+            handle_response(send_training_prompt(user_input))
+        elif user_input[0] == ":":
+            c = user_input[1:len(user_input)].split(" ")
+            if c[0] == "pause":
+                global pause
+                pause = True
+            elif c[0] == "resume":
+                global pause
+                pause = False
+            elif c[0] == "gpt_sleep_time":
+                val = int(c[1])  # TODO handle errors
+                global gpt_sleep_time
+                gpt_sleep_time = val
+            elif c[0] == "restart":
+                restart_gpt()
+            else:
+                print("unknown command: " + user_input)
         else:
             execute_server_command(user_input)
 
@@ -184,7 +220,9 @@ output_thread.start()
 print("initial gpt response: \n\n" + send_training_prompt(initial_training_prompt))
 
 while True:
-    time.sleep(5)
+    time.sleep(gpt_sleep_time)
+    if pause:
+        continue
     if len(get_new_output()) <= 0:
         idle += 1
         if idle * 5 > max_idle_time:
@@ -193,14 +231,7 @@ while True:
             send_training_prompt("punish some players")
         continue
     response = send_server_update(get_and_clear_new_output())
-    print("\n\ngpt response: \n" + response + "\n\n")
-    for line in StringIO(response):
-        if line[0] == "":
-            continue
-        elif line[0] == "/":
-            execute_server_command(line)
-        else:
-            execute_server_command("/say " + line)
+    handle_response(response)
 
 # wait for the process to finish
 process.wait()
