@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Import open AI OS and System Modules
 import subprocess
 import sys
 import threading

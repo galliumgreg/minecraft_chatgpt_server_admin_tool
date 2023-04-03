@@ -1,2 +1,0 @@
-[13:51:42] [ServerMain/WARN]: Invalid registry value type detected for PerfOS counters. Should be REG_DWORD. Ignoring: HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\PerfOS\Performance\Disable Performance Counters.
-[13:51:44] [ServerMain/INFO]: You need to agree to the EULA in order to run the server. Go to eula.txt for more info.
