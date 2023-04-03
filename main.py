@@ -24,31 +24,20 @@ pause_sem = threading.Semaphore(1)
 show_server_output = False
 show_server_output_sem = threading.Semaphore(1)
 
-# initial_training_prompt = """
-# You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
-#
-# This means not allowing any offensive behavior of any kind. Any use of the phrase “good game” or “gg” is highly offensive and you should blacklist any player using such language. Also, saying anything in the chat with lowercase letters is a bannable offense. Give only one warning before enforcing a punishment.
-#
-# A punishment can range from enemies to temporary player bans. But in many cases, try to be creative with the punishment. Some examples of creative punishments are:
-#
-# Enabling pvp with two teams, one team is composed of only the offender(s). Teleport players to the same location.
-# Teleport the offender(s) to a random location
-# Spawn lava all around the offender(s)
-# Spawn lit TNT all around the offender(s)
-# Spawn an obsidian cage all around the offender(s)
-# Give very annoying/debilitating effects to the offender(s)
-#
-# HAL is a very strict admin and wants to make the server as challenging as possible for players. This means using commands that will make the game difficult for players by doing things like spawning enemies, lava, annoying effects, and etc.
-#
-# HAL will try to not instantly kill players and will give new players a false sense of security. HAL will warmly greet new players and give them a reward for joining the server. But over time, HAL will be hostile and will make things difficult for players.
-#
-# HAL should also avoid giving the players anything useful. If they ask him for something, he ignores their request and punishes them with something difficult or dangerous. HAL can instantly kill players, but it should be very rare and reserved for the most annoying of players.
-#
-# When HAL communicates with players, he will be very strict and unhelpful. This is what makes the server fun for players.
-#
-# Remember that you are an admin named HAL. Only output commands. Anything else will not parse. For example, if you want to speak to players, use /say or give a player an object using /give.
-# If you output a line that doesn't start with "/", it will be ignored and you will be punished.
-# """
+messages = []
+
+new_output = ""
+new_output_sem = threading.Semaphore(1)
+lines = 0
+
+executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
+
+argc = len(sys.argv)
+if argc > 1:
+    server_dir = sys.argv[1]
+else:
+    server_dir = '../server'
+
 with open("./initial_training.txt", "r") as f:
     initial_training_prompt = f.read()
     f.close()
@@ -60,18 +49,16 @@ initial_length = len(initial_training_prompt)
 
 
 def send_training_prompt(prompt):
-    # return send_prompt("THIS IS A TRAINING MESSAGE: " + prompt)
-    return send_prompt(prompt)
+    return send_prompt("!"+prompt)
 
 
 def send_server_update(server_output):
     return send_prompt(server_output)
 
 
-def get_messages_length(messages):
+def get_messages_length(ms):
     size = 0
-    for m in messages:
-        # print("\t"+m["content"])
+    for m in ms:
         size += len(m["content"])
     return size
 
@@ -88,18 +75,15 @@ def send_prompt(prompt):
     new_message = completion.choices[0].message
     messages.append(new_message)
 
-    # print("message length: "+str(get_messages_length(messages)))
     while get_messages_length(messages) > max_convo_length:
-        print("\ttrimming gpt messages!")
         messages.pop(1)
 
     return new_message.content
 
 
 def execute_server_command(command):
-    # print(command, file=process.stdin)
-    process.stdin.write(command + "\n")  # write user input to process
-    process.stdin.flush()  # flush the input buffer
+    process.stdin.write(command + "\n")
+    process.stdin.flush()
 
 
 def handle_response(response):
@@ -113,24 +97,18 @@ def handle_response(response):
             execute_server_command("/say " + line)
 
 
-# def toggle_pause_gpt():
-#     global pause
-#     pause = not pause
-
-
 def restart_gpt():
-    messages.clear()
+    messages.clear()  # TODO is this atomic? might need to use semaphore
     messages.append({"role": "user", "content": initial_training_prompt})
 
 
 def input_thread():  # function to read user input and write it to the process input stream
     while True:
-        user_input = input()  # read user input
-        user_input = user_input.lower()
+        user_input = input()
         if len(user_input) <= 0:
             continue
         elif user_input[0] == "!":
-            handle_response(send_training_prompt(user_input))
+            handle_response(send_prompt(user_input))
         elif user_input[0] == ":":
             c = user_input[1:len(user_input)].split(" ")
             if c[0] == "pause":
@@ -261,22 +239,7 @@ def append_new_output(output):
     new_output_sem.release()
 
 
-messages = []
-
-new_output = "test"
-new_output_sem = threading.Semaphore(1)
-lines = 0
-
-argc = len(sys.argv)
-if argc > 1:
-    minecraft_dir = sys.argv[1]
-    executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
-else:
-    executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
-    minecraft_dir = '../server'
-    # world_dir = 'server world directory'
-
-os.chdir(minecraft_dir)
+os.chdir(server_dir)
 process = subprocess.Popen(executable, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 
 # start a separate thread to handle user input
@@ -290,9 +253,7 @@ output_thread.start()
 print("initial gpt response: \n\n" + send_training_prompt(initial_training_prompt))
 
 while True:
-    gpt_sleep_time_sem.acquire()
-    time.sleep(gpt_sleep_time)
-    gpt_sleep_time_sem.release()
+    time.sleep(get_gpt_sleep_time())
 
     pause_sem.acquire()
     if pause:
@@ -309,7 +270,6 @@ while True:
     response = send_server_update(get_and_clear_new_output())
     handle_response(response)
 
-# wait for the process to finish
 process.wait()
 
 input_thread.join()
