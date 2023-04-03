@@ -9,9 +9,20 @@ from io import StringIO
 import openai
 import os
 
-openai.api_key = os.environ['api_key']
+import tiktoken as tiktoken
 
-max_convo_length = 3900
+try:
+    openai.api_key = os.environ['api_key']
+except KeyError:
+    print("OpenAI API Key not set as environment variable! Try using: \n\texport api_key=<api key value>")
+    exit()
+
+# max_num_tokens = 4096
+max_num_tokens = 3000
+
+
+# max_num_tokens = 2048
+# max_num_tokens = 1024
 
 
 class Role(Enum):
@@ -44,14 +55,16 @@ if argc > 1:
 else:
     server_dir = '../server'
 
-with open("initial_prompt.txt", "r") as f:
-    initial_training_prompt = f.read()
-    f.close()
+try:
+    with open("initial_prompt.txt", "r") as f:
+        initial_training_prompt = f.read()
+        f.close()
+except FileNotFoundError:
+    print("initial_prompt.txt not found in directory! Make sure this file is stored in the same directory of this "
+          "script.")
 
 print("initial prompt: ")
 print(initial_training_prompt)
-
-initial_length = len(initial_training_prompt)
 
 
 def send_system_prompt(prompt):
@@ -62,27 +75,60 @@ def send_server_update(server_output):
     return send_user_prompt(server_output)
 
 
-def get_messages_length(ms):
-    size = 0
-    for m in ms:
-        size += len(m["content"])
-    return size
+def num_tokens_from_messages(ms, model="gpt-3.5-turbo-0301"):
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    if model == "gpt-3.5-turbo-0301":  # note: future models may deviate from this
+        num_tokens = 0
+        for message in ms:
+            num_tokens += 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
+            for key, value in message.items():
+                num_tokens += len(encoding.encode(value))
+                if key == "name":  # if there's a name, the role is omitted
+                    num_tokens += -1  # role is always required and always 1 token
+        num_tokens += 2  # every reply is primed with <im_start>assistant
+        return num_tokens
+    else:
+        raise NotImplementedError(f"""num_tokens_from_messages() is not presently implemented for model {model}.""")
+
+
+initial_num_tokens = num_tokens_from_messages([{"role": Role.SYSTEM.value, "content": initial_training_prompt}])
+print("initial prompt num of tokens: " + str(initial_num_tokens))
+
+
+def print_messages():
+    for m in messages:
+        print(m["content"])
 
 
 def send_user_prompt(prompt, role=Role.USER):
-    if len(messages) > 0 and len(prompt) > max_convo_length - initial_length:
-        prompt = prompt[-(max_convo_length - initial_length)]
+    msg_obj = {"role": role.value, "content": prompt}
 
-    messages.append({"role": role.value, "content": prompt})
-    completion = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=messages
-    )
+    # TODO handle single message with token length > max_num_tokens
+    # if len(messages) > 0 and num_tokens_from_messages([msg_obj]) > max_num_tokens - initial_num_tokens:
+    #     prompt = prompt[-(max_num_tokens - initial_num_tokens)]
+    # msg_obj = {"role": role.value, "content": prompt}
+
+    messages.append(msg_obj)
+
+    while len(messages) > 1 and num_tokens_from_messages(messages) > max_num_tokens:
+        print("removing old messages from request: " + str(num_tokens_from_messages(messages)) + "/" + str(
+            max_num_tokens))
+        messages.pop(1)
+
+    try:
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
+    except openai.error.InvalidRequestError:
+        print("too many tokens in request!")
+        print_messages()
+        return "ERROR"
     new_message = completion.choices[0].message
     messages.append(new_message)
-
-    while get_messages_length(messages) > max_convo_length:
-        messages.pop(1)
 
     return new_message.content
 
@@ -276,7 +322,12 @@ while True:
     response = send_server_update(get_and_clear_new_output())
     handle_response(response)
 
+# TODO gracefully exit
+
 process.wait()
 
 input_thread.join()
 output_thread.join()
+
+process.stdin.close()
+process.kill()
