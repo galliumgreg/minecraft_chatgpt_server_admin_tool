@@ -37,11 +37,11 @@ if argc > 1:
 else:
     server_dir = '../server'
 
-with open("./initial_training.txt", "r") as f:
+with open("initial_prompt.txt", "r") as f:
     initial_training_prompt = f.read()
     f.close()
 
-print("initial training prompt: ")
+print("initial prompt: ")
 print(initial_training_prompt)
 
 initial_length = len(initial_training_prompt)
