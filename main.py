@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Import open AI OS and System Modules
 import subprocess
+import sys
 import threading
 import time
 from io import StringIO
@@ -16,7 +17,12 @@ max_idle_time = 500
 idle = 0
 
 gpt_sleep_time = 5
+gpt_sleep_time_sem = threading.Semaphore(1)
 pause = False
+pause_sem = threading.Semaphore(1)
+
+show_server_output = False
+show_server_output_sem = threading.Semaphore(1)
 
 # initial_training_prompt = """
 # You are now the admin for a Minecraft server. Your name is HAL. Anything you say will be executed as a command. Your output will be fed directly to a server. Thus you should only output text that makes up a valid Minecraft command. You have full control of the server and you are responsible for making sure that the server runs smoothly.
@@ -128,15 +134,34 @@ def input_thread():  # function to read user input and write it to the process i
         elif user_input[0] == ":":
             c = user_input[1:len(user_input)].split(" ")
             if c[0] == "pause":
-                global pause
-                pause = True
+                set_pause(True)
+                print("paused gpt")
             elif c[0] == "resume":
-                global pause
-                pause = False
+                set_pause(False)
+                print("resumed gpt")
+            elif c[0] == "show_server_output":
+                if len(c) < 2:
+                    print("command needs second argument of type integer")
+                    return
+                try:
+                    val = int(c[1])
+                except ValueError:
+                    print("second argument should be integer")
+                    return
+                new = True if val > 0 else False
+                set_show_server_output(new)
+                print("set show_server_output to " + str(new))
             elif c[0] == "gpt_sleep_time":
-                val = int(c[1])  # TODO handle errors
-                global gpt_sleep_time
-                gpt_sleep_time = val
+                if len(c) < 2:
+                    print("command needs second argument of type integer")
+                    return
+                try:
+                    val = int(c[1])
+                except ValueError:
+                    print("second argument should be integer")
+                    return
+                set_gpt_sleep_time(val)
+                print("set show_server_output to " + str(val))
             elif c[0] == "restart":
                 restart_gpt()
             else:
@@ -145,13 +170,12 @@ def input_thread():  # function to read user input and write it to the process i
             execute_server_command(user_input)
 
 
-# function to read user input and write it to the process input stream
 def output_thread():
     while True:
         o = process.stdout.readline()
         if not o:
+            print("output ended!")
             break
-        # print(o, end="")
         for ln in StringIO(o):
             if "[Server]" in ln:
                 continue
@@ -161,12 +185,53 @@ def output_thread():
                 continue
             elif "<--[HERE]" in ln:
                 continue
-            print(ln, end="")
+
+            if get_show_server_output():
+                print(ln, end="")
+
             append_new_output(ln)
-            # global lines
-            # lines += 1
-            # if lines > max_idle_time:
-            #     send_training_prompt("punish some players")
+
+
+def get_show_server_output():
+    show_server_output_sem.acquire()
+    val = show_server_output
+    show_server_output_sem.release()
+    return val
+
+
+def set_show_server_output(val):
+    show_server_output_sem.acquire()
+    global show_server_output
+    show_server_output = val
+    show_server_output_sem.release()
+
+
+def get_pause():
+    pause_sem.acquire()
+    val = pause
+    pause_sem.release()
+    return val
+
+
+def set_pause(val):
+    pause_sem.acquire()
+    global pause
+    pause = val
+    pause_sem.release()
+
+
+def get_gpt_sleep_time():
+    gpt_sleep_time_sem.acquire()
+    val = gpt_sleep_time
+    gpt_sleep_time_sem.release()
+    return val
+
+
+def set_gpt_sleep_time(val):
+    gpt_sleep_time_sem.acquire()
+    global gpt_sleep_time
+    gpt_sleep_time = val
+    gpt_sleep_time_sem.release()
 
 
 def get_new_output():
@@ -174,37 +239,42 @@ def get_new_output():
 
 
 def get_and_clear_new_output():
-    sem.acquire()
+    new_output_sem.acquire()
     global new_output
     o = new_output
     new_output = ""
-    sem.release()
+    new_output_sem.release()
     return o
 
 
 def set_new_output(output):
-    sem.acquire()
+    new_output_sem.acquire()
     global new_output
     new_output = output
-    sem.release()
+    new_output_sem.release()
 
 
 def append_new_output(output):
-    sem.acquire()
+    new_output_sem.acquire()
     global new_output
     new_output += output
-    sem.release()
+    new_output_sem.release()
 
 
 messages = []
 
 new_output = "test"
-sem = threading.Semaphore(1)
+new_output_sem = threading.Semaphore(1)
 lines = 0
 
-executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
-minecraft_dir = '../server'
-# world_dir = 'server world directory'
+argc = len(sys.argv)
+if argc > 1:
+    minecraft_dir = sys.argv[1]
+    executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
+else:
+    executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
+    minecraft_dir = '../server'
+    # world_dir = 'server world directory'
 
 os.chdir(minecraft_dir)
 process = subprocess.Popen(executable, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
@@ -220,9 +290,15 @@ output_thread.start()
 print("initial gpt response: \n\n" + send_training_prompt(initial_training_prompt))
 
 while True:
+    gpt_sleep_time_sem.acquire()
     time.sleep(gpt_sleep_time)
+    gpt_sleep_time_sem.release()
+
+    pause_sem.acquire()
     if pause:
         continue
+    pause_sem.release()
+
     if len(get_new_output()) <= 0:
         idle += 1
         if idle * 5 > max_idle_time:
