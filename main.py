@@ -85,9 +85,9 @@ def execute_server_command(command):
     process.stdin.flush()
 
 
-def handle_response(response):
-    print("\n\ngpt response: \n" + response + "\n\n")
-    for line in StringIO(response):
+def handle_response(r):
+    print("\n\ngpt response: \n" + r + "\n\n")
+    for line in StringIO(r):
         if line[0] == "":
             continue
         elif line[0] == "/":
