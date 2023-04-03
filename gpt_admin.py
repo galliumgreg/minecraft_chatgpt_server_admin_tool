@@ -3,6 +3,7 @@ import subprocess
 import sys
 import threading
 import time
+from enum import Enum
 from io import StringIO
 
 import openai
@@ -11,6 +12,12 @@ import os
 openai.api_key = os.environ['api_key']
 
 max_convo_length = 3900
+
+
+class Role(Enum):
+    SYSTEM = "system"
+    USER = "user"
+
 
 max_idle_time = 500
 idle = 0
@@ -47,12 +54,12 @@ print(initial_training_prompt)
 initial_length = len(initial_training_prompt)
 
 
-def send_training_prompt(prompt):
-    return send_prompt("!"+prompt)
+def send_system_prompt(prompt):
+    return send_user_prompt(prompt, Role.SYSTEM)
 
 
 def send_server_update(server_output):
-    return send_prompt(server_output)
+    return send_user_prompt(server_output)
 
 
 def get_messages_length(ms):
@@ -62,11 +69,11 @@ def get_messages_length(ms):
     return size
 
 
-def send_prompt(prompt):
+def send_user_prompt(prompt, role=Role.USER):
     if len(messages) > 0 and len(prompt) > max_convo_length - initial_length:
         prompt = prompt[-(max_convo_length - initial_length)]
 
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": role.value, "content": prompt})
     completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=messages
@@ -98,7 +105,7 @@ def handle_response(r):
 
 def restart_gpt():
     messages.clear()  # TODO is this atomic? might need to use semaphore
-    messages.append({"role": "user", "content": initial_training_prompt})
+    messages.append({"role": Role.SYSTEM.value, "content": initial_training_prompt})
 
 
 def input_thread():  # function to read user input and write it to the process input stream
@@ -107,7 +114,7 @@ def input_thread():  # function to read user input and write it to the process i
         if len(user_input) <= 0:
             continue
         elif user_input[0] == "!":
-            handle_response(send_prompt(user_input))
+            handle_response(send_system_prompt(user_input))
         elif user_input[0] == ":":
             c = user_input[1:len(user_input)].split(" ")
             if c[0] == "pause":
@@ -249,7 +256,7 @@ input_thread.start()
 output_thread = threading.Thread(target=output_thread)
 output_thread.start()
 
-print("initial gpt response: \n\n" + send_training_prompt(initial_training_prompt))
+print("initial gpt response: \n\n" + send_system_prompt(initial_training_prompt))
 
 while True:
     time.sleep(get_gpt_sleep_time())
@@ -264,7 +271,7 @@ while True:
         if idle * 5 > max_idle_time:
             idle = 0
             print("Server has been idle for too long! Time for some fun...")
-            send_training_prompt("punish some players")
+            send_system_prompt("punish some players")
         continue
     response = send_server_update(get_and_clear_new_output())
     handle_response(response)
