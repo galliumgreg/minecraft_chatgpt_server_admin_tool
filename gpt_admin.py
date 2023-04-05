@@ -16,6 +16,12 @@ import tiktoken as tiktoken
 try:
     openai.api_key = os.environ['openai_api_key']
 except KeyError:
+    try:
+        openai.api_key = os.environ['OPENAI_API_KEY']
+    except KeyError:
+        print("OpenAI API Key not set as environment variable named: \"openai_api_key\"! Visit "
+              "https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety for more info.")
+        exit()
     print("OpenAI API Key not set as environment variable named: \"openai_api_key\"! Visit "
           "https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety for more info.")
     exit()
@@ -96,7 +102,7 @@ if argc > 1:  # TODO error catching
 else:
     server_dir = '../server'
     server_jar = 'server.jar'
-executable = f'java -Xmx1024M -Xms1024M -jar {server_jar}'  # TODO change readme
+executable = f'java -Xmx1024M -Xms1024M -jar {server_jar}'
 
 try:
     with open("initial_prompt.txt", "r") as f:
@@ -174,8 +180,6 @@ def send_user_prompt(prompt, role=Role.USER):
         )
     except openai.error.InvalidRequestError:
         traceback.print_exc()
-        # print("too many tokens in request!")
-        # print_messages()
         return "ERROR"
 
     global total_tokens_sent
@@ -245,7 +249,7 @@ def input_thread():  # function to read user input and write it to the process i
                         print("command needs second argument of type integer")
                         return
                     try:
-                        val = int(c[1])
+                        val = int(c[2])
                     except ValueError:
                         print("second argument should be integer")
                         return
@@ -270,7 +274,7 @@ def input_thread():  # function to read user input and write it to the process i
                     try:
                         val = max(2.0, min(0.0, float(c[2])))
                     except ValueError:
-                        print("second argument should be float [0.0-2.0]")
+                        print("third argument should be float [0.0-2.0]")
                         return
                     set_temperature(val)
                     print("set temperature to " + str(val))
@@ -281,7 +285,7 @@ def input_thread():  # function to read user input and write it to the process i
                     try:
                         val = int(c[2])
                     except ValueError:
-                        print("second argument should be an integer")
+                        print("third argument should be an integer")
                         return
                     set_token_limit(val)
                     print("set token_limit to " + str(val))
@@ -470,10 +474,8 @@ print("initial gpt response: \n\n" + send_system_prompt(initial_training_prompt)
 while True:
     time.sleep(get_gpt_sleep_time())
 
-    pause_sem.acquire()
     if get_pause():
         continue
-    pause_sem.release()
 
     if len(get_new_output()) <= 0:
         idle += 1

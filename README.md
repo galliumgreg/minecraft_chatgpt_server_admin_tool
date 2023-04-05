@@ -4,6 +4,12 @@ This tool connects a Minecraft server's output to OpenAI's GPT-3.5 model through
 
 The first message sent to the model is determined by the contents of `initial_prompt.txt`. This first message is preserved in all requests. Editing this will change how the model responds.
 
+## Potential Uses
+
+With some imagination, there are a myriad of ways this can add value to servers. It allows server owners to very easily setup automatic, intelligent content moderation that can potentially detect inappropriate or "toxic" content more reliably than other methods. It can make running commands easier by translating your natural language commands into Minecraft command syntax. 
+
+Although somewhat unstable now, it is likely that the release of GPT 4, some model fine-tuning, and better prompt writing will make things work much better.
+
 ## Installation
 
 To use this script, you will need Python 3 as well as the following packages installed:
@@ -46,11 +52,17 @@ The file `configuration.txt` holds various values that change how the script run
 To send a command directly to the Minecraft server, type the command as you would in the Minecraft client.
 
 You can also enter various commands to change these configurations at runtime or to control the script itself. These commands start with : and include:
-* `:pause`: Pause the GPT-3.5 model, preventing it from generating new messages.
-* `:resume`: Resume the GPT-3.5 model if it was paused.
-* `:restart`: Restart the GPT-3.5 model, clearing its conversation history.
+* `:pause`: Pause the GPT model, preventing it from generating new messages.
+* `:resume`: Resume the GPT model if it was paused.
+* `:restart`: Restart the GPT model, clearing its conversation history.
 * `:set <config variable name> <value>`: Sets a configuration variable at runtime. This does not update the configuration file. 
 * `:get <config variable name>`: Prints the current value of a configuration variable.
+
+## Troubleshooting
+
+The output from GPT can be very unstable at times. A lot of this depends on the initial prompt you give it. Editing the prompt and giving better instructions can yield much better results. But it seems that even with detailed, accurate instructions, GPT can still behave unpredictably at times. Restarting the program, or using the `:restart` command, will reset things and may bring better result. 
+
+If the program crashes and if you run into any errors please report an issue.
 
 ## Community
 
