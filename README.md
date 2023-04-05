@@ -6,19 +6,25 @@ The first message sent to the model is determined by the contents of `initial_pr
 
 ## Installation
 
-To use this script, you will need Python 3 and OpenAI's openai package installed. You will also need a valid OpenAI API key, which you can obtain from the OpenAI website.
+To use this script, you will need Python 3 as well as the following packages installed:
+
+* openai
+* tiktoken
+
+You will also need a valid OpenAI API key, which you can obtain from the OpenAI website. The key must be stored as an environment variable named `openai_api_key`. For more information about finding and setting up a key, visit: 
+https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
 
 You will also need to have a Minecraft server set up. 
 
 ## Usage
 
-To use this script, run it from the command line with the directory of your Minecraft server as the first argument:
+To use this script, run it from the command line with the directory of your Minecraft server as the first argument, and the name of the server jar file as the second argument:
 
 ```
-gpt_admin.py /path/to/minecraft/server
+gpt_admin.py /path/to/minecraft/server server.jar
 ```
 
-You can customize the command used to start the Minecraft server by editing the executable variable near the top of gpt_admin.py. Note that the jarfile must be named `server.jar`.
+You can customize the command used to start the Minecraft server by editing the executable variable near the top of gpt_admin.py.
 
 Once the script is running, you can start and stop the Minecraft server using the usual commands, such as stop. You can also send a message to the GPT-3.5 model by typing ! followed by your message. For example:
 
@@ -26,14 +32,29 @@ Once the script is running, you can start and stop the Minecraft server using th
 !teleport <player name> to a random location
 ```
 
+### Configuration
+
+The file `configuration.txt` holds various values that change how the script runs, and what values it sends to the GPT model.
+* `show_server_output <0/1>`: If 1, the program prints the Minecraft server output.
+* `gpt_sleep_time <seconds>`: The number of seconds the program will pause between sending updates to GPT.
+* `max_tokens_per_response <number of tokens>`: The maximum number of tokens that can be returned per GPT completion. This sets [max_tokens](https://platform.openai.com/docs/api-reference/chat/create#chat/create-max_tokens).
+* `temperature <temperature>`: The [temperature](https://platform.openai.com/docs/api-reference/chat/create#chat/create-temperature).
+* `token_limit <number of tokens>`: The maximum number of tokens that can be sent before the requests are automatically paused. The default value (4097) is the maximum. This sets [max_tokens](https://platform.openai.com/docs/api-reference/chat/create#chat/create-max_tokens).
+
+### Commands
+
 To send a command directly to the Minecraft server, type the command as you would in the Minecraft client.
 
-You can also enter various commands to control the script itself. These commands start with : and include:
+You can also enter various commands to change these configurations at runtime or to control the script itself. These commands start with : and include:
 * `:pause`: Pause the GPT-3.5 model, preventing it from generating new messages.
 * `:resume`: Resume the GPT-3.5 model if it was paused.
-* `:show_server_output <0/1>`: Enable or disable printing of the Minecraft server's output to the console. The argument should be 0 to disable output or 1 to enable it.
-* `:gpt_sleep_time <seconds>`: Set the number of seconds that the script should wait between sending prompts to the GPT-3.5 model. The argument should be an integer number of seconds.
 * `:restart`: Restart the GPT-3.5 model, clearing its conversation history.
+* `:set <config variable name> <value>`: Sets a configuration variable at runtime. This does not update the configuration file. 
+* `:get <config variable name>`: Prints the current value of a configuration variable.
+
+## Community
+
+[Join the Discord server](https://discord.gg/48kkKZnd)
 
 ## License
 

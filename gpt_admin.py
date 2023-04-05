@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import math
 import subprocess
 import sys
 import threading
 import time
+import traceback
 from enum import Enum
 from io import StringIO
 
@@ -12,9 +14,10 @@ import os
 import tiktoken as tiktoken
 
 try:
-    openai.api_key = os.environ['api_key']
+    openai.api_key = os.environ['openai_api_key']
 except KeyError:
-    print("OpenAI API Key not set as environment variable! Try using: \n\texport api_key=<api key value>")
+    print("OpenAI API Key not set as environment variable named: \"openai_api_key\"! Visit "
+          "https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety for more info.")
     exit()
 
 # max_num_tokens = 4096
@@ -33,35 +36,77 @@ class Role(Enum):
 max_idle_time = 500
 idle = 0
 
-gpt_sleep_time = 5
+# gpt_sleep_time = 10
 gpt_sleep_time_sem = threading.Semaphore(1)
 pause = False
 pause_sem = threading.Semaphore(1)
 
-show_server_output = False
+# show_server_output = False
 show_server_output_sem = threading.Semaphore(1)
 
 messages = []
+messages_sem = threading.Semaphore(1)
+
+# configuration
+try:
+    with open("config.txt", "r") as f:
+        try:
+            for line in f:
+                c = line.split(" ")
+                if c[0] == "show_server_output":
+                    show_server_output = int(c[1])
+                if c[0] == "gpt_sleep_time":
+                    gpt_sleep_time = float(c[1])
+                if c[0] == "max_tokens_per_response":
+                    max_tokens_per_response = int(min(9223372036854775807.0, float(c[1])))
+                if c[0] == "temperature":
+                    temperature = float(c[1])
+                if c[0] == "token_limit":
+                    token_limit = float(c[1])
+            f.close()
+        except ValueError:
+            print("Couldn't read value from config.txt! Check that you are using the correct types.")
+            f.close()
+            traceback.print_exc()
+            exit()
+except FileNotFoundError:
+    print("config.txt not found in directory! Make sure this file is stored in the same directory as this "
+          "script.")
+    traceback.print_exc()
+    exit()
+# temperature = 0.8
+temperature_sem = threading.Semaphore(1)
+total_tokens_sent = 0
+# token_limit = math.inf
+token_limit_sem = threading.Semaphore(1)
+# max_tokens_per_response = math.inf
+max_tokens_per_response_sem = threading.Semaphore(1)
 
 new_output = ""
 new_output_sem = threading.Semaphore(1)
 lines = 0
 
-executable = 'java -Xmx1024M -Xms1024M -jar server.jar'
-
 argc = len(sys.argv)
-if argc > 1:
+if argc > 1:  # TODO error catching
     server_dir = sys.argv[1]
+    if argc > 2:
+        server_jar = sys.argv[2]
+    else:
+        server_jar = 'server.jar'
 else:
     server_dir = '../server'
+    server_jar = 'server.jar'
+executable = f'java -Xmx1024M -Xms1024M -jar {server_jar}'  # TODO change readme
 
 try:
     with open("initial_prompt.txt", "r") as f:
         initial_training_prompt = f.read()
         f.close()
 except FileNotFoundError:
-    print("initial_prompt.txt not found in directory! Make sure this file is stored in the same directory of this "
+    print("initial_prompt.txt not found in directory! Make sure this file is stored in the same directory as this "
           "script.")
+    traceback.print_exc()
+    exit()
 
 print("initial prompt: ")
 print(initial_training_prompt)
@@ -114,19 +159,33 @@ def send_user_prompt(prompt, role=Role.USER):
     messages.append(msg_obj)
 
     while len(messages) > 1 and num_tokens_from_messages(messages) > max_num_tokens:
-        print("removing old messages from request: " + str(num_tokens_from_messages(messages)) + "/" + str(
+        print("removing oldest message from request: " + str(num_tokens_from_messages(messages)) + "/" + str(
             max_num_tokens))
         messages.pop(1)
+
+    num_tokens = num_tokens_from_messages(messages)
 
     try:
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=messages
+            messages=get_messages(),
+            temperature=get_temperature(),
+            # max_tokens=get_max_tokens_per_response() - num_tokens,  # TODO fix
         )
     except openai.error.InvalidRequestError:
-        print("too many tokens in request!")
-        print_messages()
+        traceback.print_exc()
+        # print("too many tokens in request!")
+        # print_messages()
         return "ERROR"
+
+    global total_tokens_sent
+    total_tokens_sent += completion["usage"]["prompt_tokens"]
+    print(f"{total_tokens_sent} total tokens sent")
+
+    if total_tokens_sent > get_token_limit():
+        print("TOKEN LIMIT EXCEEDED! Pausing API calls...")
+        set_pause(True)
+
     new_message = completion.choices[0].message
     messages.append(new_message)
 
@@ -169,29 +228,77 @@ def input_thread():  # function to read user input and write it to the process i
             elif c[0] == "resume":
                 set_pause(False)
                 print("resumed gpt")
-            elif c[0] == "show_server_output":
-                if len(c) < 2:
-                    print("command needs second argument of type integer")
-                    return
-                try:
-                    val = int(c[1])
-                except ValueError:
-                    print("second argument should be integer")
-                    return
-                new = True if val > 0 else False
-                set_show_server_output(new)
-                print("set show_server_output to " + str(new))
-            elif c[0] == "gpt_sleep_time":
-                if len(c) < 2:
-                    print("command needs second argument of type integer")
-                    return
-                try:
-                    val = int(c[1])
-                except ValueError:
-                    print("second argument should be integer")
-                    return
-                set_gpt_sleep_time(val)
-                print("set show_server_output to " + str(val))
+            elif c[0] == "set":
+                if c[1] == "gpt_sleep_time":
+                    if len(c) < 3:
+                        print("command needs second argument of type float")
+                        return
+                    try:
+                        val = float(c[2])
+                    except ValueError:
+                        print("second argument should be float")
+                        return
+                    set_gpt_sleep_time(val)
+                    print("set gpt_sleep_time to " + str(val))
+                elif c[1] == "show_server_output":
+                    if len(c) < 3:
+                        print("command needs second argument of type integer")
+                        return
+                    try:
+                        val = int(c[1])
+                    except ValueError:
+                        print("second argument should be integer")
+                        return
+                    new = True if val > 0 else False
+                    set_show_server_output(new)
+                    print("set show_server_output to " + str(new))
+                elif c[1] == "max_tokens_per_response":
+                    if len(c) < 3:
+                        print("command needs second argument of type integer")
+                        return
+                    try:
+                        val = float(c[2])
+                    except ValueError:
+                        print("second argument should be int")
+                        return
+                    set_max_tokens_per_response(val)
+                    print("set max_tokens_per_response to " + str(val))
+                elif c[1] == "temperature":
+                    if len(c) < 3:
+                        print("command needs second argument of type float [0.0-1.0]")
+                        return
+                    try:
+                        val = max(2.0, min(0.0, float(c[2])))
+                    except ValueError:
+                        print("second argument should be float [0.0-2.0]")
+                        return
+                    set_temperature(val)
+                    print("set temperature to " + str(val))
+                elif c[1] == "token_limit":
+                    if len(c) < 3:
+                        print("command needs second argument of type integer")
+                        return
+                    try:
+                        val = int(c[2])
+                    except ValueError:
+                        print("second argument should be an integer")
+                        return
+                    set_token_limit(val)
+                    print("set token_limit to " + str(val))
+                else:
+                    print("unknown command: " + user_input)
+
+            elif c[0] == "get":
+                if c[1] == "gpt_sleep_time":
+                    print("gpt_sleep_time: " + str(get_gpt_sleep_time()))
+                elif c[1] == "total_tokens_sent":
+                    print("total_tokens_sent: " + str(total_tokens_sent))
+                elif c[1] == "temperature":
+                    print("temperature: " + str(get_temperature()))
+                elif c[1] == "token_limit":
+                    print("token_limit: " + str(get_token_limit()))
+                else:
+                    print("unknown command: " + user_input)
             elif c[0] == "restart":
                 restart_gpt()
             else:
@@ -220,6 +327,20 @@ def output_thread():
                 print(ln, end="")
 
             append_new_output(ln)
+
+
+def get_messages():
+    messages_sem.acquire()
+    val = messages
+    messages_sem.release()
+    return val
+
+
+def set_messages(val):
+    messages_sem.acquire()
+    global messages
+    messages = val
+    messages_sem.release()
 
 
 def get_show_server_output():
@@ -262,6 +383,48 @@ def set_gpt_sleep_time(val):
     global gpt_sleep_time
     gpt_sleep_time = val
     gpt_sleep_time_sem.release()
+
+
+def get_temperature():
+    temperature_sem.acquire()
+    val = temperature
+    temperature_sem.release()
+    return val
+
+
+def set_temperature(val):
+    temperature_sem.acquire()
+    global temperature
+    temperature = val
+    temperature_sem.release()
+
+
+def get_token_limit():
+    token_limit_sem.acquire()
+    val = token_limit
+    token_limit_sem.release()
+    return val
+
+
+def set_token_limit(val):
+    token_limit_sem.acquire()
+    global token_limit
+    token_limit = val
+    token_limit_sem.release()
+
+
+def get_max_tokens_per_response():
+    max_tokens_per_response_sem.acquire()
+    val = max_tokens_per_response
+    max_tokens_per_response_sem.release()
+    return val
+
+
+def set_max_tokens_per_response(val):
+    max_tokens_per_response_sem.acquire()
+    global max_tokens_per_response
+    max_tokens_per_response = val
+    max_tokens_per_response_sem.release()
 
 
 def get_new_output():
@@ -308,7 +471,7 @@ while True:
     time.sleep(get_gpt_sleep_time())
 
     pause_sem.acquire()
-    if pause:
+    if get_pause():
         continue
     pause_sem.release()
 

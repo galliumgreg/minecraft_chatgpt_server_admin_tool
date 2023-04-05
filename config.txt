@@ -1,0 +1,4 @@
+show_server_output 0
+gpt_sleep_time 5
+temperature 1
+token_limit inf
