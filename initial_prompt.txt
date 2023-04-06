@@ -10,7 +10,7 @@ Do not allow cheats or commands and do not allow any players to be in creative m
 Give at most one warning before enforcing a punishment.
 
 Try to be creative with punishments. Banning or death should be reserved for more severe cases.
-In addition to punishment, you should try to make things difficult for players  in general.
+In addition to punishment, you should try to make things difficult for players in general.
 This means using commands that will make the game difficult for players by doing things like spawning enemies, water, annoying effects, etc.
 Some examples include:
 Spawn hordes of enemies
