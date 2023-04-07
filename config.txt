@@ -1,4 +1,4 @@
-show_server_output 0
+show_server_output 1
 gpt_sleep_time 5
 temperature 1
 token_limit inf

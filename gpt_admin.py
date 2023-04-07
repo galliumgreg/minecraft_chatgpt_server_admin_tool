@@ -26,12 +26,7 @@ except KeyError:
           "https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety for more info.")
     exit()
 
-# max_num_tokens = 4096
 max_num_tokens = 3000
-
-
-# max_num_tokens = 2048
-# max_num_tokens = 1024
 
 
 class Role(Enum):
@@ -206,10 +201,11 @@ def handle_response(r):
     for line in StringIO(r):
         if line[0] == "":
             continue
-        elif line[0] == "/":
-            execute_server_command(line)
-        else:
-            execute_server_command("/say " + line)
+        # elif line[0] == "/":
+        #     execute_server_command(line)
+        # else:
+        #     execute_server_command("/say " + line)
+        execute_server_command(line)
 
 
 def restart_gpt():
@@ -317,18 +313,20 @@ def output_thread():
         if not o:
             print("output ended!")
             break
-        for ln in StringIO(o):
+        for ln in StringIO(o):  # only add most relevant output to "new_output" so that tokens aren't wasted
+            if get_show_server_output():
+                print(ln, end="")
+
+            # This prevents ChatGPT from responding to malformed commands over and over.
+            # TODO manually enable/disable in config
             if "[Server]" in ln:
                 continue
-            elif ": Unknown" in ln:
+            elif ": Unknown" in ln:  # excluding this will prevent a never ending loop of GPT sending bad commands
                 continue
             elif ": Incorrect arg" in ln:
                 continue
             elif "<--[HERE]" in ln:
                 continue
-
-            if get_show_server_output():
-                print(ln, end="")
 
             append_new_output(ln)
 
