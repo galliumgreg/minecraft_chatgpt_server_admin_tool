@@ -457,7 +457,7 @@ def append_new_output(output):
 
 
 os.chdir(server_dir)
-process = subprocess.Popen(executable, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+process = subprocess.Popen(executable, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, shell=True)
 
 # start a separate thread to handle user input
 input_thread = threading.Thread(target=input_thread)
@@ -479,8 +479,8 @@ while True:
         idle += 1
         if idle * 5 > max_idle_time:
             idle = 0
-            print("Server has been idle for too long! Time for some fun...")
-            send_system_prompt("punish some players")
+#             print("Server has been idle for too long! Time for some fun...")
+#             send_system_prompt("punish some players")
         continue
     response = send_server_update(get_and_clear_new_output())
     handle_response(response)
